@@ -14,10 +14,22 @@ class Note:
 
 
 @dataclass
+class CC:
+    controller: int       # 74 = filter cutoff, 11 = expression, 1 = mod wheel
+    value: int
+    at: float             # beats
+
+
+# the controllers worth automating, and what Logic does with them
+CUTOFF, RESONANCE, EXPRESSION, MODWHEEL, VOLUME = 74, 71, 11, 1, 7
+
+
+@dataclass
 class Track:
     name: str
     notes: list = field(default_factory=list)
     channel: int = 0      # 9 = GM drums
+    cc: list = field(default_factory=list)
 
     def add(self, pitch, start, dur, vel=100):
         self.notes.append(Note(pitch, start, dur, vel))
@@ -27,16 +39,47 @@ class Track:
         self.notes.extend(notes)
         return self
 
+    def merge(self, other, at=0.0):
+        """Fold another track's notes and automation in, offset by `at` beats."""
+        shifted = other.shifted(at)
+        self.notes.extend(shifted.notes)
+        self.cc.extend(shifted.cc)
+        return self
+
+    def set_cc(self, controller, value, at):
+        self.cc.append(CC(controller, int(round(value)), at))
+        return self
+
+    def ramp(self, controller, start, end, frm, to, steps=24, curve=1.0):
+        """Write a controller ramp. curve > 1 starts slow, < 1 starts fast."""
+        steps = max(int(steps), 1)
+        for i in range(steps + 1):
+            f = i / steps
+            self.set_cc(controller, frm + (to - frm) * (f ** curve),
+                        start + (end - start) * f)
+        return self
+
     def shifted(self, beats):
-        return Track(self.name, [Note(n.pitch, n.start + beats, n.dur, n.vel)
-                                 for n in self.notes], self.channel)
+        return Track(self.name,
+                     [Note(n.pitch, n.start + beats, n.dur, n.vel) for n in self.notes],
+                     self.channel,
+                     [CC(c.controller, c.value, c.at + beats) for c in self.cc])
 
     def repeated(self, times, every):
         """Tile this track `times` times, `every` beats apart."""
         out = Track(self.name, [], self.channel)
         for i in range(times):
-            out.extend(self.shifted(i * every).notes)
+            out.merge(self, i * every)
         return out
+
+    def window(self, start_beat, end_beat, rebase=True):
+        """The slice of this track between two beats, optionally moved to zero."""
+        off = -start_beat if rebase else 0.0
+        notes = [Note(n.pitch, n.start + off, n.dur, n.vel) for n in self.notes
+                 if start_beat <= n.start < end_beat]
+        cc = [CC(c.controller, c.value, max(0.0, c.at + off)) for c in self.cc
+              if start_beat <= c.at < end_beat]
+        return Track(self.name, notes, self.channel, cc)
 
 
 def _vlq(n):
@@ -65,12 +108,15 @@ def _meta_track(bpm, numerator, denominator, name):
 
 def _note_track(track):
     events = []
+    for c in track.cc:
+        events.append((int(round(c.at * TPQ)), 0, 0xB0 | track.channel,
+                       max(0, min(127, c.controller)), max(0, min(127, c.value))))
     for n in track.notes:
         on = int(round(n.start * TPQ))
         off = max(on + 1, int(round((n.start + n.dur) * TPQ)))
         p, v = max(0, min(127, n.pitch)), max(1, min(127, n.vel))
-        events.append((off, 0, 0x80 | track.channel, p, 0))   # note-offs first at a tie
-        events.append((on, 1, 0x90 | track.channel, p, v))
+        events.append((off, 1, 0x80 | track.channel, p, 0))   # offs before ons at a tie
+        events.append((on, 2, 0x90 | track.channel, p, v))
     events.sort(key=lambda e: (e[0], e[1]))
 
     d = bytearray()

@@ -10,6 +10,16 @@ That writes `out/trance_138_F.mid` plus a rendered `.wav` preview, copies the
 MIDI to `~/Music/Logic/claude-loops`, and reveals it in Finder so you can drag
 it straight onto a track.
 
+For a whole track instead of a loop:
+
+```bash
+bin/make-track --key F --bpm 138 --template club --preview drop
+```
+
+88 bars of intro / groove / build / drop / breakdown / rebuild / drop / outro,
+with filter and expression automation written as CC74 and CC11, and an audio
+preview of just the drop. Templates: `short`, `club`, `extended`.
+
 ## Setup
 
 ```bash
@@ -37,6 +47,7 @@ lead". Claude composes it, renders a preview, and drops it into Logic.
 | `logicbridge/midi.py` | standard MIDI file writer, positions in beats |
 | `logicbridge/patterns.py` | four-on-the-floor, offbeat bass, arps, acid lines, builds |
 | `logicbridge/styles.py` | whole-loop recipes: trance, psytrance, uplifting, techno |
+| `logicbridge/arrange.py` | section-based arrangements with filter/expression automation |
 | `logicbridge/synth.py` | virtual-analog engine for previews |
 | `logicbridge/logic.py` | macOS bridge — deliver, reveal, import, transport |
 | `scripter/` | Logic Scripter plugins (JavaScript MIDI FX) |

@@ -25,6 +25,15 @@ The normal flow for "make me a <something> loop":
 `bin/make-loop` does all of this for the stock styles. Use it for a quick
 starting point, then edit patterns directly for anything specific.
 
+For a full track rather than a loop, use `logicbridge.arrange` and
+`bin/make-track`. An arrangement is a list of `Section`s, each naming its
+layers, its energy and how open the filter is; the engine merges every layer
+into one `Track` per instrument and writes CC74/CC11 automation.
+
+**Previews of an arrangement must be windowed.** The ladder filter runs
+sample-by-sample, so pass `bar_range=(lo, hi)` to `synth.preview()` and keep it
+under ~16 bars. A full 88-bar render would take many minutes and gigabytes.
+
 ## Check your work before claiming it sounds good
 
 You cannot hear the render, so measure it. After writing a WAV, check duration,
@@ -40,6 +49,12 @@ print(len(L) / 44100, L.std(), abs(L).max())
 Red flags worth fixing rather than shipping: peak at 1.0 (clipping), RMS under
 0.05 (too quiet to judge), nothing above 8 kHz (filter shut, or no hats),
 nothing under 100 Hz in a dance loop (no sub).
+
+**Measure the right thing.** Global RMS is dominated by the kick, so it will not
+show a bass filter sweep or a section-level move — render the single track in
+question and measure that, or measure per-bar RMS to see the shape of a
+transition. A whole-mix number that looks flat usually means the wrong
+instrument, not a broken engine.
 
 Never tell the user a loop "sounds great" — you do not know that. Say what you
 built and what you measured; let them judge.

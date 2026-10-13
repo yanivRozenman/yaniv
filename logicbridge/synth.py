@@ -157,12 +157,38 @@ PRESETS = {
 
 
 # ----------------------------------------------------------------------- render
+def _cutoff_mult(track, total_o, beat):
+    """CC74 automation as a multiplier over the timeline. It scales the envelope
+    depth as well as the base cutoff — otherwise a snappy per-note envelope
+    swamps the automation and a filter sweep across a build is inaudible."""
+    events = sorted((c for c in track.cc if c.controller == 74), key=lambda c: c.at)
+    if not events:
+        return np.ones(total_o)
+    pos = np.clip([int(c.at * beat * SRO) for c in events], 0, total_o - 1)
+    mult = [0.2 + 2.3 * (c.value / 127.0) ** 1.4 for c in events]
+    return np.interp(np.arange(total_o), pos, mult,
+                     left=mult[0], right=mult[-1])
+
+
+def _expression_gain(track, total_o, beat, floor=0.35):
+    """CC11 as a gain curve, so a section's energy is audible and not just
+    exported. Decimated to SR by the caller along with the audio."""
+    events = sorted((c for c in track.cc if c.controller == 11), key=lambda c: c.at)
+    if not events:
+        return None
+    pos = np.clip([int(c.at * beat * SRO) for c in events], 0, total_o - 1)
+    gain = [floor + (1.0 - floor) * (c.value / 127.0) for c in events]
+    return np.interp(np.arange(total_o), pos, gain,
+                     left=gain[0], right=gain[-1])
+
+
 def render_track(track, patch, bpm, bars, tail=0.5):
     """Sum a Track's notes through one filter. Returns stereo float arrays at SR."""
     beat = 60.0 / bpm
     total_o = int((bars * 4 * beat + tail) * SRO)
     osc = np.zeros((2, total_o))
-    cut = np.full(total_o, patch.cutoff)
+    mult = _cutoff_mult(track, total_o, beat)
+    cut = patch.cutoff * mult
 
     for i, nt in enumerate(track.notes):
         start = int(nt.start * beat * SRO)
@@ -182,11 +208,15 @@ def render_track(track, patch, bpm, bars, tail=0.5):
                    int(n * 0.6))
         osc[:, start:start + n] += wave * env * (nt.vel / 110.0)
         if patch.env_amt:
-            ce = patch.cutoff + patch.env_amt * np.exp(
+            seg_mult = mult[start:start + n]
+            ce = cut[start:start + n] + patch.env_amt * seg_mult * np.exp(
                 -np.arange(n) / (patch.env_decay * SRO))
             seg = cut[start:start + n]
             cut[start:start + n] = np.maximum(seg, ce)
 
+    expr = _expression_gain(track, total_o, beat)
+    if expr is not None:
+        osc *= expr
     L = _decimate(ladder(osc[0], cut, patch.res, patch.drive)) * patch.gain
     R = _decimate(ladder(osc[1], cut, patch.res, patch.drive)) * patch.gain
     if patch.chorus_mix > 0.0:
@@ -249,8 +279,17 @@ def write_wav(path, L, R, headroom=0.89):
     return path
 
 
-def preview(parts, bpm, bars, path, master_drive=0.8):
-    """parts: [(track, patch_or_name_or_None, level), ...]  None patch = drums."""
+def preview(parts, bpm, bars, path, master_drive=0.8, bar_range=None):
+    """parts: [(track, patch_or_name_or_None, level), ...]  None patch = drums.
+
+    bar_range=(start, end) renders only that window, rebased to zero. Use it for
+    anything longer than ~16 bars: the ladder filter runs sample-by-sample, so a
+    full 88-bar arrangement would take many minutes and gigabytes.
+    """
+    if bar_range is not None:
+        lo, hi = bar_range
+        parts = [(t.window(lo * 4.0, hi * 4.0), p, lv) for t, p, lv in parts]
+        bars = hi - lo
     mixL = mixR = None
     for track, patch, level in parts:
         if patch is None or track.channel == 9:

@@ -121,3 +121,36 @@ def riser_hats(bars=2, vel_from=50, vel_to=118):
             rate /= 2
         at += rate
     return t
+
+
+def snare_roll(bars=2, start_rate=0.5, end_rate=0.0625, vel_from=60, vel_to=120):
+    """Accelerating snare into a drop. Halves the step length as it goes."""
+    t = Track("Snare Roll", channel=9)
+    total = bars * 4
+    at, rate = 0.0, start_rate
+    while at < total:
+        f = at / total
+        t.add(SNARE, at, rate * 0.6, int(vel_from + (vel_to - vel_from) * f))
+        at += rate
+        if f > 0.45 and rate > end_rate:
+            rate /= 2
+    return t
+
+
+def crash_hits(at_bars, vel=104):
+    """Single crashes on the downbeat of each listed bar (bar numbers, 0-based)."""
+    t = Track("Crash", channel=9)
+    for b in at_bars:
+        t.add(CRASH, b * 4, 2.0, vel)
+    return t
+
+
+def kick_only(bars=4, vel=118):
+    """Stripped intro groove: kick and a quiet closed hat, nothing else."""
+    t = Track("Drums", channel=9)
+    for b in range(bars):
+        for beat in range(4):
+            at = b * 4 + beat
+            t.add(KICK, at, 0.5, vel)
+            t.add(CHAT, at + 0.5, 0.12, 44)
+    return t

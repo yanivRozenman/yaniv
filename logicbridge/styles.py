@@ -4,7 +4,7 @@ from . import patterns as P
 from .theory import note
 
 # i - VI - III - VII in the minor key, the backbone of most trance
-DEGREES = [0, -4, 3, -1]
+DEGREES = [0, -4, 3, -2]
 
 
 def _progression(key, qualities=("min9", "maj9", "maj9", "maj9"), octave=2):

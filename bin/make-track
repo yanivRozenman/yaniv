@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Build a full arrangement — intro / build / drop / breakdown / outro — as one
+MIDI file, plus an optional audio preview of a chosen section.
+
+  bin/make-track --key F --bpm 138 --template club --preview drop
+"""
+import argparse, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from logicbridge import arrange, midi, synth, logic
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--key", default="F")
+    ap.add_argument("--bpm", type=float, default=138.0)
+    ap.add_argument("--template", default="club", choices=sorted(arrange.TEMPLATES))
+    ap.add_argument("--out", default="out")
+    ap.add_argument("--name", default=None)
+    ap.add_argument("--preview", default=None, metavar="SECTION",
+                    help="render audio for one section, e.g. drop, breakdown, "
+                         "or a bar range like 16:28")
+    ap.add_argument("--deliver", action="store_true",
+                    help="copy to ~/Music/Logic/claude-loops and reveal in Finder")
+    a = ap.parse_args()
+
+    arr = arrange.build(a.key, a.bpm, a.template)
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    stem = a.name or f"{a.template}_{int(a.bpm)}_{a.key}"
+
+    mid = midi.save(out / f"{stem}.mid", arr.tracks, bpm=arr.bpm, name=stem)
+    mins, secs = divmod(arr.bars * 4 * 60 / arr.bpm, 60)
+    print(f"{arr.bars} bars ({int(mins)}:{int(secs):02d})  "
+          f"{sum(len(t.notes) for t in arr.tracks)} notes  "
+          f"{sum(len(t.cc) for t in arr.tracks)} automation points")
+    print(arr.summary())
+    print(f"MIDI  {mid}")
+
+    if a.preview:
+        if ":" in a.preview:
+            lo, hi = (int(x) for x in a.preview.split(":"))
+        else:
+            lo = arr.section_bar(a.preview)
+            hi = lo + next(s.bars for s in arr.sections if s.name == a.preview)
+            lo = max(0, lo - 4)          # a few bars of run-up for context
+        wav = synth.preview(arr.parts, arr.bpm, arr.bars,
+                            out / f"{stem}_{a.preview.replace(':', '-')}.wav",
+                            bar_range=(lo, hi))
+        print(f"audio {wav}   (bars {lo}-{hi})")
+
+    if a.deliver:
+        if logic.available():
+            print(f"delivered {logic.deliver(mid)}")
+        else:
+            print("not a Mac with Logic installed - skipping delivery")
+
+
+if __name__ == "__main__":
+    main()
