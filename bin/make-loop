@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Generate a loop as MIDI (and optionally audio), then hand it to Logic.
+
+  bin/make-loop --style trance --key F --bpm 138 --bars 8 --audio --deliver
+"""
+import argparse, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from logicbridge import midi, synth, logic
+from logicbridge.styles import STYLES
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--style", default="trance", choices=sorted(STYLES))
+    ap.add_argument("--key", default=None, help="root note letter, e.g. F or A#")
+    ap.add_argument("--bpm", type=float, default=None)
+    ap.add_argument("--bars", type=int, default=8)
+    ap.add_argument("--out", default="out", help="output directory")
+    ap.add_argument("--name", default=None)
+    ap.add_argument("--audio", action="store_true", help="also render a WAV preview")
+    ap.add_argument("--deliver", action="store_true",
+                    help="copy into ~/Music/Logic/claude-loops and reveal in Finder")
+    ap.add_argument("--import-into-logic", action="store_true",
+                    help="drive File > Import > MIDI File (needs Accessibility)")
+    a = ap.parse_args()
+
+    kwargs = {"bars": a.bars}
+    if a.key:
+        kwargs["key"] = a.key
+    if a.bpm:
+        kwargs["bpm"] = a.bpm
+    tracks, parts, bpm = STYLES[a.style](**kwargs)
+
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    stem = a.name or f"{a.style}_{int(bpm)}_{(a.key or 'default')}"
+    mid = midi.save(out / f"{stem}.mid", tracks, bpm=bpm, name=stem)
+    print(f"MIDI  {mid}  ({sum(len(t.notes) for t in tracks)} notes, {a.bars} bars)")
+
+    if a.audio:
+        wav = synth.preview(parts, bpm, a.bars, out / f"{stem}.wav")
+        print(f"audio {wav}")
+
+    if a.deliver:
+        if not logic.available():
+            print("not a Mac with Logic installed - skipping delivery")
+        else:
+            print(f"delivered {logic.deliver(mid)}")
+    if a.import_into_logic:
+        try:
+            logic.import_midi(mid)
+            print("imported into Logic")
+        except Exception as e:
+            print(f"UI import failed ({e}); file revealed in Finder instead")
+            logic.reveal(mid)
+
+
+if __name__ == "__main__":
+    main()
